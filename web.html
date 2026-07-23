@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACCESS TERMINAL</title>
+<style>
+  :root{
+    --bg:#050806;
+    --fg:#38ff7a;
+    --dim:#1f7a44;
+    --err:#ff4d4d;
+    --warn:#ffcf3d;
+    --glow:rgba(56,255,122,.35);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:var(--bg);
+    color:var(--fg);
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+    font-size:15px;
+    line-height:1.55;
+    overflow:hidden;
+  }
+  .crt{
+    position:fixed;inset:0;pointer-events:none;z-index:5;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.18) 2px 3px);
+    mix-blend-mode:multiply;
+  }
+  .vignette{
+    position:fixed;inset:0;pointer-events:none;z-index:4;
+    background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.55) 100%);
+  }
+  #screen{
+    position:absolute;inset:0;
+    padding:22px 18px 60px;
+    overflow-y:auto;
+    text-shadow:0 0 6px var(--glow);
+  }
+  #screen::-webkit-scrollbar{width:8px;}
+  #screen::-webkit-scrollbar-thumb{background:var(--dim);}
+  .line{white-space:pre-wrap;word-break:break-word;}
+  .dim{color:var(--dim);text-shadow:none;}
+  .err{color:var(--err);text-shadow:0 0 6px rgba(255,77,77,.4);}
+  .warn{color:var(--warn);text-shadow:0 0 6px rgba(255,207,61,.4);}
+  .big{color:var(--warn);font-weight:700;text-shadow:0 0 10px rgba(255,207,61,.5);}
+  /* input row */
+  #inputRow{display:flex;align-items:baseline;gap:8px;}
+  #ps{color:var(--fg);flex:none;}
+  #inputWrap{position:relative;flex:1;}
+  #cmd{
+    width:100%;background:transparent;border:none;outline:none;
+    color:var(--fg);font:inherit;text-shadow:0 0 6px var(--glow);
+    caret-color:transparent;padding:0;
+  }
+  #mirror{position:absolute;left:0;top:0;visibility:hidden;white-space:pre;font:inherit;pointer-events:none;}
+  #inputRow.hidden{display:none;}
+  .cursor{
+    position:absolute;top:0.05em;left:0;
+    width:9px;height:1.1em;background:var(--fg);
+    box-shadow:0 0 8px var(--glow);
+    animation:blink 1s steps(1) infinite;pointer-events:none;
+  }
+  @keyframes blink{50%{opacity:0;}}
+  @media (prefers-reduced-motion: reduce){.cursor{animation:none;}}
+  /* image reveal overlay */
+  #reveal{
+    position:fixed;inset:0;z-index:20;display:none;
+    align-items:center;justify-content:center;flex-direction:column;gap:16px;
+    background:rgba(0,0,0,.92);cursor:pointer;
+    animation:fadein .5s ease;
+  }
+  #reveal.show{display:flex;}
+  #reveal img{
+    max-width:90vw;max-height:80vh;
+    border:1px solid var(--fg);
+    box-shadow:0 0 30px var(--glow);
+  }
+  #revealCap{color:var(--fg);font-size:13px;text-shadow:0 0 6px var(--glow);}
+  @keyframes fadein{from{opacity:0;}to{opacity:1;}}
+</style>
+</head>
+<body>
+<!-- ================================================================= -->
+<!--  แก้ตรงนี้ได้เลย                                                     -->
+<!--  แต่ละชุด: questions (รหัส/คำตอบ) + image (ชื่อไฟล์ภาพ)               -->
+<!--  before = ข้อความที่โชว์ก่อน ACCESS GRANTED (ใส่ให้ข้อไหนก็ได้)        -->
+<!--  วางไฟล์ภาพไว้โฟลเดอร์เดียวกับ terminal.html                          -->
+<!-- ================================================================= -->
+<script>
+const SETS = {
+  A: {
+    label: "SET A",
+    questions: [
+      { prompt: "ขอรหัสสามตัว", key: "729", before: "5P" },
+      { prompt: "กรอกคำตอบ",    key: "ห้องลับหาทางออก" },
+    ],
+    image: "secretSET_A.png",
+    successMsg: "ACCESS GRANTED — กำลังเปิดไฟล์ภาพ...",
+  },
+  B: {
+    label: "SET B",
+    questions: [
+      { prompt: "ขอรหัสสามตัว", key: "609",before: "1F" },
+      { prompt: "กรอกคำตอบ",    key: "jeje" },
+    ],
+    image: "secretSET_B.png",
+    successMsg: "ACCESS GRANTED — ห้องพี่ยังว่างอยู๋...",
+  },
+};
+// ================================================================= //
+</script>
+
+<div id="screen">
+  <div id="log"></div>
+  <div id="inputRow" class="hidden">
+    <span id="ps">&gt;</span>
+    <span id="inputWrap">
+      <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <span id="mirror"></span>
+      <span class="cursor" id="cur"></span>
+    </span>
+  </div>
+</div>
+
+<div id="reveal">
+  <img id="revealImg" alt="">
+  <div id="revealCap">คลิกที่ใดก็ได้ หรือกด ESC เพื่อปิด</div>
+</div>
+
+<div class="vignette"></div>
+<div class="crt"></div>
+
+<!-- ============ ระบบกันการเปิด Developer Tools (กันคนทั่วไป) ============ -->
+<script>
+(function(){
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('keydown', function(e){
+    const k = (e.key || '').toLowerCase();
+    if (
+      k === 'f12' ||
+      (e.ctrlKey && e.shiftKey && ['i','j','c'].includes(k)) ||
+      (e.ctrlKey && k === 'u') ||
+      (e.ctrlKey && k === 's') ||
+      (e.metaKey && e.altKey && ['i','j','c'].includes(k))
+    ){ e.preventDefault(); e.stopPropagation(); return false; }
+  }, true);
+
+  let warned = false;
+  setInterval(function(){
+    const t = 160;
+    if (window.outerWidth - window.innerWidth > t || window.outerHeight - window.innerHeight > t){
+      if (!warned){
+        warned = true;
+        document.body.innerHTML =
+          '<div style="color:#ff4d4d;font-family:monospace;padding:40px;font-size:18px;'+
+          'text-shadow:0 0 6px rgba(255,77,77,.5)">ACCESS TERMINATED<br><br>'+
+          'ตรวจพบการเปิด Developer Tools<br>กรุณาปิดแล้วรีเฟรชหน้าใหม่</div>';
+        document.body.style.background = '#050806';
+      }
+    } else { warned = false; }
+  }, 1000);
+})();
+</script>
+
+<script>
+const screen = document.getElementById('screen');
+const log = document.getElementById('log');
+const inputRow = document.getElementById('inputRow');
+const cmd = document.getElementById('cmd');
+const ps = document.getElementById('ps');
+const mirror = document.getElementById('mirror');
+const cur = document.getElementById('cur');
+const reveal = document.getElementById('reveal');
+const revealImg = document.getElementById('revealImg');
+
+// ---------- เคอร์เซอร์ตามการพิมพ์ ----------
+function updateCursor(){
+  const pos = (cmd.selectionStart == null) ? cmd.value.length : cmd.selectionStart;
+  mirror.textContent = cmd.value.slice(0, pos);
+  cur.style.left = mirror.offsetWidth + 'px';
+}
+['input','keyup','keydown','click','focus'].forEach(ev =>
+  cmd.addEventListener(ev, () => requestAnimationFrame(updateCursor))
+);
+
+// ---------- state ----------
+let state = 'boot';    // boot -> menu -> quiz -> done
+let currentSet = null; // 'A' | 'B'
+let qIndex = 0;
+let busy = false;
+
+// ---------- helpers ----------
+function scrollDown(){ screen.scrollTop = screen.scrollHeight; }
+function addLine(text = '', cls = ''){
+  const div = document.createElement('div');
+  div.className = 'line' + (cls ? ' ' + cls : '');
+  div.textContent = text;
+  log.appendChild(div); scrollDown(); return div;
+}
+function typeLine(text = '', cls = '', speed = 16){
+  return new Promise(resolve => {
+    const div = document.createElement('div');
+    div.className = 'line' + (cls ? ' ' + cls : '');
+    log.appendChild(div);
+    let i = 0;
+    (function tick(){
+      div.textContent = text.slice(0, i); scrollDown();
+      if (i++ < text.length){ setTimeout(tick, speed); } else { resolve(); }
+    })();
+  });
+}
+async function typeLines(lines, cls='', speed=16, gap=90){
+  for (const l of lines){ await typeLine(l, cls, speed); await new Promise(r=>setTimeout(r,gap)); }
+}
+function setPrompt(p){ ps.textContent = p; }
+function showInput(show){
+  inputRow.classList.toggle('hidden', !show);
+  if (show){ cmd.value=''; setTimeout(()=>{ cmd.focus(); updateCursor(); }, 30); }
+}
+
+// ---------- flow ----------
+async function boot(){
+  showInput(false); busy = true;
+  await typeLines([
+    "ACCESS TERMINAL  v2.7",
+    "(c) SECURE NODE // restricted",
+    "-------------------------------------",
+  ], 'dim', 8, 40);
+  await typeLines([
+    "initializing secure channel .........",
+    "loading cipher tables ...............",
+    "connection established.",
+  ], '', 14, 120);
+  addLine('');
+  busy = false;
+  await menu();
+}
+
+async function menu(){
+  state = 'menu'; currentSet = null;
+  await typeLine("มีชุดปริศนาให้เลือก 2 ชุด:", '', 12);
+  addLine("  A  —  " + SETS.A.label, 'warn');
+  addLine("  B  —  " + SETS.B.label, 'warn');
+  addLine('');
+  addLine("พิมพ์ A หรือ B เพื่อเริ่ม  (พิมพ์ help ดูคำสั่งทั้งหมด)", 'dim');
+  setPrompt('select>'); showInput(true);
+}
+
+async function startSet(letter){
+  currentSet = letter; qIndex = 0; state = 'quiz';
+  addLine('');
+  await typeLine(">> เข้าสู่ " + SETS[letter].label + " <<", 'warn', 14);
+  addLine('');
+  askQuestion();
+}
+
+function askQuestion(){
+  const set = SETS[currentSet];
+  const q = set.questions[qIndex];
+  addLine(`[${qIndex+1}/${set.questions.length}]  ${q.prompt}`);
+  setPrompt('key>'); showInput(true);
+}
+
+async function checkAnswer(input){
+  const set = SETS[currentSet];
+  const q = set.questions[qIndex];
+  addLine('key> ' + input, 'dim');
+  if (input.trim().toLowerCase() === q.key.trim().toLowerCase()){
+    busy = true; showInput(false);
+    // โชว์ข้อความ before ก่อน (ถ้ามี)
+    if (q.before){ await typeLine(q.before, 'big', 22); }
+    await typeLine("ACCESS GRANTED", 'warn', 22);
+    qIndex++;
+    busy = false;
+    // แสดงตัวเลือกหลังทุกคำตอบ
+    addLine('');
+    addLine("พิมพ์ back เพื่อเลือกชุดอื่น หรือ restart เพื่อเริ่มใหม่", 'dim');
+    if (qIndex < set.questions.length){
+      addLine('');
+      askQuestion();
+    } else {
+      await openImage();
+    }
+  } else {
+    addLine("ACCESS DENIED — ไม่ถูกต้อง ลองใหม่", 'err');
+    // แสดงตัวเลือกหลังทุกคำตอบ
+    addLine("พิมพ์ back เพื่อเลือกชุดอื่น หรือ restart เพื่อเริ่มใหม่", 'dim');
+    setPrompt('key>'); showInput(true);
+  }
+}
+
+async function openImage(){
+  const set = SETS[currentSet];
+  busy = true; showInput(false);
+  addLine('');
+  await typeLine(set.successMsg, 'big', 22);
+
+  revealImg.onload = () => {
+    reveal.classList.add('show');
+    busy = false; state = 'done';
+  };
+  revealImg.onerror = () => {
+    addLine('');
+    addLine("(เปิดไฟล์ภาพไม่ได้ — เช็คชื่อไฟล์ image = \"" + set.image + "\" และตำแหน่งไฟล์)", 'err');
+    busy = false; state = 'menu'; currentSet = null;
+    setPrompt('select>'); showInput(true);
+  };
+  revealImg.src = set.image;
+}
+
+function closeReveal(){
+  if (!reveal.classList.contains('show')) return;
+  reveal.classList.remove('show');
+  state = 'menu'; currentSet = null;
+  setPrompt('select>'); showInput(true);
+}
+reveal.addEventListener('click', closeReveal);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeReveal(); });
+
+function showHelp(){
+  addLine('');
+  addLine("คำสั่งที่ใช้ได้:", 'warn');
+  addLine("  A / B     เลือกชุดปริศนา");
+  addLine("  back      กลับไปหน้าเลือกชุด");
+  addLine("  restart   เริ่มใหม่ทั้งหมด");
+  addLine("  clear     ล้างหน้าจอ");
+  addLine("  help      แสดงเมนูคำสั่งนี้");
+  addLine('');
+}
+
+// ---------- input ----------
+cmd.addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter' || busy) return;
+  const raw = cmd.value;
+  const low = raw.trim().toLowerCase();
+  showInput(false);
+
+  // คำสั่งพิเศษ ใช้ได้ทุกที่
+  if (low === 'clear'){ log.innerHTML=''; reEnter(); return; }
+  if (low === 'help'){ showHelp(); reEnter(); return; }
+  if (low === 'restart'){ log.innerHTML=''; boot(); return; }
+  if (low === 'back'){ addLine(''); menu(); return; }
+
+  if (state === 'menu'){
+    if (low === 'a'){ startSet('A'); return; }
+    if (low === 'b'){ startSet('B'); return; }
+    addLine("select> " + raw, 'dim');
+    addLine("ไม่รู้จักคำสั่งนี้ — พิมพ์ A, B หรือ help", 'err');
+    reEnter(); return;
+  }
+
+  if (state === 'quiz'){ await checkAnswer(raw); return; }
+  reEnter();
+});
+
+function reEnter(){
+  setPrompt(state === 'quiz' ? 'key>' : 'select>');
+  showInput(true);
+}
+
+document.addEventListener('click', () => {
+  if (reveal.classList.contains('show')) return;
+  if(!inputRow.classList.contains('hidden')) cmd.focus();
+});
+
+boot();
+</script>
+
+</body>
+</html>
