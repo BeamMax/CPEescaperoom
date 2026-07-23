@@ -93,20 +93,20 @@ const SETS = {
   A: {
     label: "SET A",
     questions: [
-      { prompt: "ขอรหัสสามตัว", key: "729", before: "5P" },
+      { prompt: "ขอรหัสสามตัว", key: "729", before: "5G" },
       { prompt: "กรอกคำตอบ",    key: "ห้องลับหาทางออก" },
     ],
     image: "secretSET_A.png",
-    successMsg: "ACCESS GRANTED — กำลังเปิดไฟล์ภาพ...",
+    successMsg: "ACCESS GRANTED — กำลังเปิดไฟล์ภาพ................................................",
   },
   B: {
     label: "SET B",
     questions: [
       { prompt: "ขอรหัสสามตัว", key: "609",before: "1F" },
-      { prompt: "กรอกคำตอบ",    key: "jeje" },
+      { prompt: "กรอกคำตอบ",    key: "ห้องพี่ยังว่างอยู่" },
     ],
     image: "secretSET_B.png",
-    successMsg: "ACCESS GRANTED — ห้องพี่ยังว่างอยู๋...",
+    successMsg: "ACCESS GRANTED — กำลังเปิดไฟล์ภาพ.................................................",
   },
 };
 // ================================================================= //
@@ -214,6 +214,34 @@ function typeLine(text = '', cls = '', speed = 16){
 async function typeLines(lines, cls='', speed=16, gap=90){
   for (const l of lines){ await typeLine(l, cls, speed); await new Promise(r=>setTimeout(r,gap)); }
 }
+// พิมพ์ข้อความปกติก่อน แล้วไล่ "จุด" ที่ท้ายข้อความขึ้นทีละตัว (ช้าลงเพื่อความลุ้น)
+function typeLineWithDots(text = '', cls = '', speed = 22, dotDelay = 100){
+  const m = text.match(/^(.*?)(\.+)$/s);      // แยกข้อความ กับ ชุดจุดท้ายสุด
+  if (!m){ return typeLine(text, cls, speed); }
+  const base = m[1];
+  const dots = m[2];
+  return new Promise(async resolve => {
+    const div = document.createElement('div');
+    div.className = 'line' + (cls ? ' ' + cls : '');
+    log.appendChild(div);
+    // พิมพ์ส่วนข้อความปกติ
+    let i = 0;
+    await new Promise(res => {
+      (function tick(){
+        div.textContent = base.slice(0, i); scrollDown();
+        if (i++ < base.length){ setTimeout(tick, speed); } else { res(); }
+      })();
+    });
+    // ไล่จุดทีละตัว
+    let d = 0;
+    (function dot(){
+      if (d < dots.length){
+        div.textContent = base + dots.slice(0, ++d); scrollDown();
+        setTimeout(dot, dotDelay);
+      } else { resolve(); }
+    })();
+  });
+}
 function setPrompt(p){ ps.textContent = p; }
 function showInput(show){
   inputRow.classList.toggle('hidden', !show);
@@ -295,7 +323,7 @@ async function openImage(){
   const set = SETS[currentSet];
   busy = true; showInput(false);
   addLine('');
-  await typeLine(set.successMsg, 'big', 22);
+  await typeLineWithDots(set.successMsg, 'big', 22, 120);
 
   revealImg.onload = () => {
     reveal.classList.add('show');
